@@ -2,7 +2,8 @@ name: home_widget_workspace
 publish_to: none
 
 environment:
-  sdk: ^3.9.0
+  sdk: ^3.12.0
+  flutter: ">=3.44.0"
 
 workspace:
   - packages/home_widget

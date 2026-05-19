@@ -12,6 +12,7 @@ dependencies:
   flutter:
     sdk: flutter
   home_widget:
+    path: ../../packages/home_widget
 
 dev_dependencies:
   flutter_test:
