@@ -133,3 +133,6 @@ app.*.symbols
 **/failures/*.png
 pubspec_overrides.yaml
 .cxx
+
+# FVM Version Cache
+.fvm/
