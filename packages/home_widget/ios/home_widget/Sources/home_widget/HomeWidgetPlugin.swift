@@ -4,7 +4,12 @@ import Intents
 import UIKit
 import WidgetKit
 
-public class HomeWidgetPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
+public class HomeWidgetPlugin: NSObject,
+  FlutterPlugin,
+  FlutterStreamHandler,
+  FlutterApplicationLifeCycleDelegate,
+  FlutterSceneLifeCycleDelegate
+{
 
   @available(iOS 17.0, *)
   private static var configurationLookup: [String: any WidgetConfigurationIntent.Type] = [:]
@@ -22,7 +27,7 @@ public class HomeWidgetPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
   private var latestUrl: URL? {
     didSet {
       if latestUrl != nil {
-        eventSink?.self(latestUrl?.absoluteString)
+        eventSink?(latestUrl?.absoluteString)
       }
     }
   }
@@ -30,7 +35,10 @@ public class HomeWidgetPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
   private var eventSink: FlutterEventSink?
 
   private let notInitializedError = FlutterError(
-    code: "-7", message: "AppGroupId not set. Call setAppGroupId first", details: nil)
+    code: "-7",
+    message: "AppGroupId not set. Call setAppGroupId first",
+    details: nil
+  )
 
   private func callArguments(_ call: FlutterMethodCall) -> [String: Any?]? {
     return call.arguments as? [String: Any?]
@@ -38,10 +46,11 @@ public class HomeWidgetPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
   private func resolvedAppGroupId(from call: FlutterMethodCall) -> String? {
     if let args = callArguments(call),
-      let appGroupId = args["appGroupId"] as? String
+       let appGroupId = args["appGroupId"] as? String
     {
       return appGroupId
     }
+
     return HomeWidgetPlugin.groupId
   }
 
@@ -54,52 +63,81 @@ public class HomeWidgetPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
   public static func register(with registrar: FlutterPluginRegistrar) {
     let instance = HomeWidgetPlugin()
 
-    let channel = FlutterMethodChannel(name: "home_widget", binaryMessenger: registrar.messenger())
+    let channel = FlutterMethodChannel(
+      name: "home_widget",
+      binaryMessenger: registrar.messenger()
+    )
+
     registrar.addMethodCallDelegate(instance, channel: channel)
 
     let eventChannel = FlutterEventChannel(
-      name: "home_widget/updates", binaryMessenger: registrar.messenger())
+      name: "home_widget/updates",
+      binaryMessenger: registrar.messenger()
+    )
+
     eventChannel.setStreamHandler(instance)
 
     guard isRunningInAppExtension() == false else {
       return
     }
 
+    // Old UIApplication lifecycle support
     let selector = NSSelectorFromString("addApplicationDelegate:")
     if registrar.responds(to: selector) {
       registrar.perform(selector, with: instance)
     }
+
+    // New UIScene lifecycle support
+    let sceneSelector = NSSelectorFromString("addSceneDelegate:")
+    if registrar.responds(to: sceneSelector) {
+      registrar.perform(sceneSelector, with: instance)
+    }
   }
 
+  // MARK: - Flutter Methods
+
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+
     if call.method == "setAppGroupId" {
+
       guard let args = call.arguments else {
         return
       }
+
       if let myArgs = args as? [String: Any?],
-        let groupId = myArgs["groupId"] as? String
+         let groupId = myArgs["groupId"] as? String
       {
         HomeWidgetPlugin.groupId = groupId
         result(true)
+
       } else {
         result(
           FlutterError(
-            code: "-6", message: "InvalidArguments setAppGroupId must be called with a group id",
-            details: nil))
+            code: "-6",
+            message: "InvalidArguments setAppGroupId must be called with a group id",
+            details: nil
+          )
+        )
       }
+
     } else if call.method == "saveWidgetData" {
+
       guard let resolvedGroupId = resolvedAppGroupId(from: call) else {
         result(notInitializedError)
         return
       }
+
       guard let args = call.arguments else {
         return
       }
+
       if let myArgs = args as? [String: Any?],
-        let id = myArgs["id"] as? String,
-        let data = myArgs["data"]
+         let id = myArgs["id"] as? String,
+         let data = myArgs["data"]
       {
-        let preferences = UserDefaults.init(suiteName: resolvedGroupId)
+
+        let preferences = UserDefaults(suiteName: resolvedGroupId)
+
         if data != nil {
           if let binaryData = data as? FlutterStandardTypedData {
             preferences?.setValue(Data(binaryData.data), forKey: id)
@@ -109,43 +147,59 @@ public class HomeWidgetPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         } else {
           preferences?.removeObject(forKey: id)
         }
+
         result(true)
+
       } else {
         result(
           FlutterError(
-            code: "-1", message: "InvalidArguments saveWidgetData must be called with id and data",
-            details: nil))
+            code: "-1",
+            message: "InvalidArguments saveWidgetData must be called with id and data",
+            details: nil
+          )
+        )
       }
+
     } else if call.method == "getWidgetData" {
+
       guard let resolvedGroupId = resolvedAppGroupId(from: call) else {
         result(notInitializedError)
         return
       }
+
       guard let args = call.arguments else {
         return
       }
+
       if let myArgs = args as? [String: Any?],
-        let id = myArgs["id"] as? String,
-        let defaultValue = myArgs["defaultValue"]
+         let id = myArgs["id"] as? String,
+         let defaultValue = myArgs["defaultValue"]
       {
-        let preferences = UserDefaults.init(suiteName: resolvedGroupId)
+
+        let preferences = UserDefaults(suiteName: resolvedGroupId)
         result(preferences?.value(forKey: id) ?? defaultValue)
+
       } else {
         result(
           FlutterError(
-            code: "-2", message: "InvalidArguments getWidgetData must be called with id",
-            details: nil))
+            code: "-2",
+            message: "InvalidArguments getWidgetData must be called with id",
+            details: nil
+          )
+        )
       }
+
     } else if call.method == "updateWidget" {
 
       guard let args = call.arguments else {
         return
       }
+
       if let myArgs = args as? [String: Any?] {
-        // Check ios first, then fall back to name
-        // Handle NSNull explicitly since nil-coalescing doesn't work with NSNull
+
         let iosValue = myArgs["ios"]
         let nameValue = myArgs["name"]
+
         let widgetName: String?
 
         if let iosString = iosValue as? String {
@@ -157,35 +211,54 @@ public class HomeWidgetPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         }
 
         if let name = widgetName {
+
           if #available(iOS 14.0, *) {
+
             #if arch(arm64) || arch(i386) || arch(x86_64)
-              WidgetCenter.shared.reloadTimelines(ofKind: name)
-              result(true)
+            WidgetCenter.shared.reloadTimelines(ofKind: name)
+            result(true)
             #endif
+
           } else {
+
             result(
               FlutterError(
-                code: "-4", message: "Widgets are only available on iOS 14.0 and above",
-                details: nil)
+                code: "-4",
+                message: "Widgets are only available on iOS 14.0 and above",
+                details: nil
+              )
             )
           }
+
         } else {
+
           result(
             FlutterError(
-              code: "-3", message: "InvalidArguments updateWidget must be called with name",
-              details: nil))
+              code: "-3",
+              message: "InvalidArguments updateWidget must be called with name",
+              details: nil
+            )
+          )
         }
+
       } else {
+
         result(
           FlutterError(
-            code: "-3", message: "InvalidArguments updateWidget must be called with name",
-            details: nil))
+            code: "-3",
+            message: "InvalidArguments updateWidget must be called with name",
+            details: nil
+          )
+        )
       }
+
     } else if call.method == "initiallyLaunchedFromHomeWidget" {
+
       if HomeWidgetPlugin.groupId == nil {
         result(notInitializedError)
         return
       }
+
       result(initialUrl?.absoluteString)
     } else if call.method == "registerBackgroundCallback" {
       if HomeWidgetPlugin.groupId == nil {
@@ -387,9 +460,13 @@ public class HomeWidgetPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     }
   }
 
-  public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink)
-    -> FlutterError?
-  {
+  // MARK: - Event Channel
+
+  public func onListen(
+    withArguments arguments: Any?,
+    eventSink events: @escaping FlutterEventSink
+  ) -> FlutterError? {
+
     eventSink = events
     return nil
   }
@@ -399,42 +476,94 @@ public class HomeWidgetPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     return nil
   }
 
+  // MARK: - UIApplication lifecycle (legacy support)
+
   public func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [AnyHashable: Any] = [:]
   ) -> Bool {
-    let launchUrl = (launchOptions[UIApplication.LaunchOptionsKey.url] as? NSURL)?.absoluteURL
-    if launchUrl != nil && isWidgetUrl(url: launchUrl!) {
-      initialUrl = launchUrl?.absoluteURL
-      latestUrl = initialUrl
+
+    let launchUrl =
+      (launchOptions[UIApplication.LaunchOptionsKey.url] as? NSURL)?.absoluteURL
+
+    if let launchUrl,
+       isWidgetUrl(url: launchUrl)
+    {
+      initialUrl = launchUrl
+      latestUrl = launchUrl
     }
+
     return true
   }
 
   public func application(
-    _ application: UIApplication, open url: URL,
+    _ application: UIApplication,
+    open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
+
     if isWidgetUrl(url: url) {
       latestUrl = url
       return true
     }
+
     return false
   }
 
+  // MARK: - UIScene lifecycle (new)
+
+  public func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions
+  ) {
+
+    if let urlContext = connectionOptions.urlContexts.first {
+
+      let url = urlContext.url
+
+      if isWidgetUrl(url: url) {
+        initialUrl = url
+        latestUrl = url
+      }
+    }
+  }
+
+  public func scene(
+    _ scene: UIScene,
+    openURLContexts URLContexts: Set<UIOpenURLContext>
+  ) {
+
+    guard let url = URLContexts.first?.url else {
+      return
+    }
+
+    if isWidgetUrl(url: url) {
+      latestUrl = url
+    }
+  }
+
+  // MARK: - Helpers
+
   private func isWidgetUrl(url: URL) -> Bool {
-    let components = URLComponents.init(url: url, resolvingAgainstBaseURL: false)
-    return components?.queryItems?.contains(where: { (item) in item.name == "homeWidget" }) ?? false
+    let components = URLComponents(
+      url: url,
+      resolvingAgainstBaseURL: false
+    )
+
+    return components?.queryItems?.contains(where: {
+      $0.name == "homeWidget"
+    }) ?? false
   }
 }
 
 protocol _AnyIntentParameter {
-
   var anyWrappedValue: Any { get }
 }
 
 @available(iOS 16.0, *)
 extension IntentParameter: _AnyIntentParameter {
+
   var anyWrappedValue: Any {
     return wrappedValue
   }
